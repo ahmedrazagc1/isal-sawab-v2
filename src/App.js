@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
-// YAHAN APNI GEMINI API KEY DALO
-const GEMINI_API_KEY = "AIzaSyApOheLiHFf_fEx_cvbr0vu950ly7rqsBQ"; 
+// CLAUDE API KEY YAHAN DALO
+const CLAUDE_API_KEY = "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"; 
 
 const App = () => {
   const [input, setInput] = useState('');
@@ -10,87 +10,101 @@ const App = () => {
   const [status, setStatus] = useState('');
 
   useEffect(() => {
-    const saved = localStorage.getItem('sawabData');
+    const saved = localStorage.getItem('sawabData_Claude');
     if (saved) setData(JSON.parse(saved));
   }, []);
 
-  const processWithAI = async () => {
+  // Backup Manual Logic: Agar AI fail ho jaye
+  const manualBackup = (text) => {
+    const num = text.match(/\d+/) ? parseInt(text.match(/\d+/)[0]) : 1;
+    const lowerText = text.toLowerCase();
+    if (lowerText.includes('quran')) return { quran: num };
+    if (lowerText.includes('durood')) return { durood: num };
+    if (lowerText.includes('kalma')) return { kalma: num };
+    if (lowerText.includes('istighfar')) return { istighfar: num };
+    return { other: num };
+  };
+
+  const processWithClaude = async () => {
     if (!input.trim()) return;
     setLoading(true);
-    setStatus('AI Soch raha hai...');
-
-    const prompt = `Extract Islamic acts and their counts from this text: "${input}". 
-    Respond ONLY in this JSON format: {"quran": 0, "durood": 0, "kalma": 0, "istighfar": 0, "other": 0}.
-    Translate words like "ek", "do", "ten", "one", "hundred" into numbers. 
-    If someone says "1 quran" or "ek quran", put 1 in quran. 
-    If no act is found, return all zeros. JSON ONLY.`;
+    setStatus('Claude Analysis Kar Raha Hai...');
 
     try {
-      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        headers: {
+          'x-api-key': CLAUDE_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+          'dangerously-allow-browser': 'true' // React testing ke liye zaruri hai
+        },
+        body: JSON.stringify({
+          model: "claude-3-haiku-20240307",
+          max_tokens: 100,
+          messages: [{ role: "user", content: `Extract counts from: "${input}". Return ONLY JSON: {"quran":0, "durood":0, "kalma":0, "istighfar":0, "other":0}. Convert words like "ek", "hundred" to numbers.` }]
+        })
       });
 
-      const result = await resp.json();
-      const aiText = result.candidates[0].content.parts[0].text;
-      const cleanedJson = aiText.replace(/```json|```/g, "").trim();
-      const extracted = JSON.parse(cleanedJson);
-
-      if (Object.values(extracted).every(v => v === 0)) {
-        setStatus('❌ AI ko koi ginti nahi mili. Dobara likhein (e.g. 100 durood)');
-      } else {
-        const newData = {
-          quran: data.quran + (extracted.quran || 0),
-          durood: data.durood + (extracted.durood || 0),
-          kalma: data.kalma + (extracted.kalma || 0),
-          istighfar: data.istighfar + (extracted.istighfar || 0),
-          other: data.other + (extracted.other || 0),
-        };
-        setData(newData);
-        localStorage.setItem('sawabData', JSON.stringify(newData));
-        setInput('');
-        setStatus('✅ MashAllah! Sawab add ho gaya.');
+      const result = await response.json();
+      let extracted;
+      
+      try {
+        const rawText = result.content[0].text;
+        extracted = JSON.parse(rawText.match(/\{.*\}/s)[0]);
+      } catch (e) {
+        extracted = manualBackup(input);
       }
+
+      const newData = {
+        quran: data.quran + (extracted.quran || 0),
+        durood: data.durood + (extracted.durood || 0),
+        kalma: data.kalma + (extracted.kalma || 0),
+        istighfar: data.istighfar + (extracted.istighfar || 0),
+        other: data.other + (extracted.other || 0),
+      };
+
+      setData(newData);
+      localStorage.setItem('sawabData_Claude', JSON.stringify(newData));
+      setStatus('✅ MashAllah! Record Update Ho Gaya.');
+      setInput('');
     } catch (err) {
       console.error(err);
-      setStatus('⚠️ API Error! Key check karein ya dobara try karein.');
+      setStatus('⚠️ Connection Problem! Key check karein.');
     }
     setLoading(false);
   };
 
-  const totalSawab = Object.values(data).reduce((a, b) => a + b, 0);
-
   return (
-    <div style={{ backgroundColor: '#0a192f', color: '#e6f1ff', minHeight: '100vh', padding: '20px', fontFamily: 'Arial', textAlign: 'center', direction: 'rtl' }}>
-      <div style={{ border: '2px solid #64ffda', borderRadius: '15px', padding: '30px', maxWidth: '500px', margin: '0 auto', backgroundColor: '#112240' }}>
-        <h2 style={{ color: '#64ffda' }}>مجموعی ثواب</h2>
-        <h1 style={{ fontSize: '60px', color: '#f3d874' }}>{totalSawab}</h1>
+    <div style={{ backgroundColor: '#020617', color: '#38bdf8', minHeight: '100vh', padding: '20px', direction: 'rtl', textAlign: 'center', fontFamily: 'system-ui' }}>
+      <div style={{ border: '2px solid #38bdf8', borderRadius: '20px', padding: '20px', maxWidth: '450px', margin: 'auto', background: '#0f172a', boxShadow: '0 0 20px rgba(56,189,248,0.2)' }}>
+        <h2 style={{ color: '#94a3b8' }}>مجموعی ثواب (Claude AI Edition)</h2>
+        <h1 style={{ fontSize: '65px', color: '#f0abfc', margin: '10px 0' }}>{Object.values(data).reduce((a, b) => a + b, 0)}</h1>
       </div>
 
-      <div style={{ marginTop: '30px' }}>
+      <div style={{ marginTop: '25px' }}>
         <textarea 
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="مثلاً: میں نے 100 بار درود شریف پڑھا..."
-          style={{ width: '100%', maxWidth: '500px', height: '100px', borderRadius: '10px', padding: '15px', fontSize: '18px', border: '2px solid #f3d874', backgroundColor: '#112240', color: 'white' }}
+          placeholder="Yahan likhein: maslan '100 durood' ya 'aik quran'..."
+          style={{ width: '90%', maxWidth: '450px', height: '100px', borderRadius: '12px', padding: '15px', background: '#1e293b', color: 'white', border: '1px solid #334155', fontSize: '18px' }}
         />
-        <br />
+        <br/>
         <button 
-          onClick={processWithAI}
+          onClick={processWithClaude}
           disabled={loading}
-          style={{ marginTop: '15px', padding: '12px 40px', fontSize: '18px', borderRadius: '8px', cursor: 'pointer', backgroundColor: '#f3d874', color: '#0a192f', border: 'none', fontWeight: 'bold' }}
+          style={{ marginTop: '15px', padding: '15px 40px', fontSize: '20px', borderRadius: '10px', background: '#38bdf8', color: '#020617', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}
         >
-          {loading ? 'انتظار کریں...' : 'ثواب بھیجیں 🚀'}
+          {loading ? 'AI Soch Raha Hai...' : 'ثواب جمع کریں ✨'}
         </button>
-        <p style={{ marginTop: '15px', color: '#ccd6f6' }}>{status}</p>
+        <p style={{ color: '#94a3b8' }}>{status}</p>
       </div>
 
-      <div style={{ marginTop: '30px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', maxWidth: '500px', margin: '30px auto' }}>
-        {Object.entries(data).map(([key, val]) => (
-          <div key={key} style={{ padding: '15px', backgroundColor: '#1d2d50', borderRadius: '10px', border: '1px solid #64ffda' }}>
-            <span style={{ textTransform: 'capitalize', color: '#64ffda' }}>{key === 'quran' ? 'قرآن پاک' : key === 'durood' ? 'درود شریف' : key === 'kalma' ? 'کلمہ طیبہ' : key === 'istighfar' ? 'استغفار' : 'دیگر'}</span>
-            <h3 style={{ margin: '5px 0' }}>{val}</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', maxWidth: '450px', margin: '30px auto' }}>
+        {Object.entries(data).map(([k, v]) => (
+          <div key={k} style={{ background: '#1e293b', padding: '15px', borderRadius: '12px', borderBottom: '4px solid #38bdf8' }}>
+            <div style={{ fontSize: '14px', color: '#94a3b8' }}>{k.toUpperCase()}</div>
+            <div style={{ fontSize: '28px', fontWeight: 'bold' }}>{v}</div>
           </div>
         ))}
       </div>
